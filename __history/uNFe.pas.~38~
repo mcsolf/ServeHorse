@@ -1,0 +1,888 @@
+unit uNFe;
+
+interface
+
+  uses Horse, System.SysUtils, System.JSON,FireDAC.Stan.Intf, FireDAC.Stan.Option,
+  FireDAC.Stan.Error, FireDAC.UI.Intf, FireDAC.Phys.Intf, FireDAC.Stan.Def,
+  FireDAC.Stan.Pool, FireDAC.Stan.Async, FireDAC.Phys, FireDAC.VCLUI.Wait,
+  FireDAC.Stan.Param, FireDAC.DatS, FireDAC.DApt.Intf, FireDAC.DApt, Data.DB,
+  FireDAC.Comp.DataSet, FireDAC.Comp.Client, System.ImageList, Vcl.ImgList, Vcl.Controls,
+  System.Actions, Vcl.ActnList, forms, FireDAC.Phys.ODBCBase, FireDAC.Comp.UI,
+  FireDAC.Phys.PG, FireDAC.Phys.PGDef, System.Classes,
+
+  //acbr
+  ACBrBase, ACBrDFe, ACBrNFe, ACBrDFeSSL, blcksock,
+  pcnConversaoNFe, pcnConversao;
+
+  procedure Registry(App : THorse);
+  procedure Post(Req: THorseRequest; Res: THorseResponse; Next: TProc);
+
+  function confCONN():TFDConnection;
+  //acbr
+  Function MontaNFe(value : TJSONObject):integer;
+
+  Function tagEmitente(value : TJSONObject):integer;
+  Function tagDestinatario(value : TJSONObject):integer;
+  Function tagItens(value : TJSONArray):integer;
+  Function tagTotal(value : TJSONObject):integer;
+  Function tagPag(value : TJSONObject):integer;
+  Function tagRespTec(value : TJSONObject):integer;
+
+
+  const
+  pathServico= 'C:\SRI_SERVICES\Cloud\';
+  schemaOrigem = 'C:\SRI_SERVICES\Cloud\PADRAO\SCHEMAS\';
+
+  var ACBrNFe1 : TACBrNFe;
+
+implementation
+
+procedure Registry(App : THorse);
+begin
+  App.Post('/nfe',Post);
+end;
+
+procedure Post(Req: THorseRequest; Res: THorseResponse; Next: TProc);
+var reqJson : TJSONObject;
+begin
+
+  reqjson := TJSONObject.Create;
+  reqJson := Req.Body<TJSONObject>;
+
+
+  //Res.Send<TJSONObject>(reqJson);
+  MontaNFe(reqJson);
+
+  Res.Send('xml criado!');
+
+end;
+
+Function MontaNFe(value : TJSONObject):integer;
+var  pathConfNFCe, cnpj: string;
+  nrItem        : Integer;
+  rSomaPis      : Currency;
+  rSomaCofins   : Currency;
+  rSomaNF       : Currency;
+  rSomaBC       : Currency;
+  rSomaICMS     : Currency;
+  rSomaDesc     : Currency;
+  rSomaProd     : Currency;
+  cSomaIbptEst  : Currency;
+  TotalvFCPSTRet: Currency;
+  cSomaIbptFed  : Currency;
+  rSomaRec      : Currency;
+  //
+  iContItem     : Integer;
+  numNFCe       : Integer;
+  iSerie        : Integer;
+  I             : Integer;
+  SR            : TSearchRec;
+  dData         : TDateTime;
+  sAux, erro :string;
+
+  qryConf : TFDQuery;
+  strStreamL   : tStringStream;
+  xCertificado: AnsiString;
+  xSENHA : STRING;
+  jSubPar : TJSONPair;
+  json, jsonFree: TJSONObject;
+  lote : string;
+begin
+
+  cnpj := (value.GetValue('emit') as TJSONObject).GetValue('CNPJ').Value;
+  saux := cnpj + '\';
+
+  ACBrNFe1 := nil;
+  ACBrNFe1 := TACBrNFe.Create(nil);
+
+  qryConf:= TFDQuery.Create(nil);
+  qryConf.Connection := confCONN;
+
+  qryConf.Close;
+  qryConf.SQL.Text := 'SELECT * FROM EMPRESAXCERTIFICADO A WHERE A.cnpj = :P';
+  qryConf.ParamByName('p').AsString := cnpj;
+  qryConf.Open;
+
+  if not qryConf.IsEmpty then
+    begin
+      xSENHA := qryConf.FieldByName('SENHA').AsString;
+    end;
+
+  FreeAndNil(qryConf);
+
+   //************************************provissorio
+   strStreamL   := TStringStream.Create();
+   strStreamL.LoadFromFile('C:\BANCO\CERTIFICADO.PFX');
+
+   xCertificado :=  strStreamL.DataString;
+
+  ACBrNFe1.Configuracoes.Certificados.DadosPFX := xCertificado;
+  ACBrNFe1.Configuracoes.Certificados.Senha    := xSenha;
+  ACBrNFe1.Configuracoes.Geral.SSLLib          := TSSLLib(4);
+  ACBrNFe1.Configuracoes.Geral.SSLCryptLib     := cryWinCrypt;
+  ACBrNFe1.Configuracoes.Geral.SSLHttpLib      := httpWinHttp;//      := httpWinHttp;
+  ACBrNFe1.Configuracoes.Geral.SSLXmlSignLib   := xsLibXml2;  //   := xsLibXml2;
+  ACBrNFe1.Configuracoes.Geral.VersaoDF        := ve400;
+  ACBrNFe1.Configuracoes.Geral.VersaoQRCode    := veqr200;
+  ACBrNFe1.SSL.SSLType                         := TSSLType(5);
+  // xCertificado                              := EmptyStr;
+
+  try
+    if (ACBrNFe1.SSL.CertDataVenc < Now) then
+      raise Exception.Create('Certificado digital vencido!');
+  except
+    on e: exception do
+      begin
+        if trim(e.Message)='Certificado digital vencido!' then
+          raise Exception.Create('Certificado digital vencido!')
+        else
+          raise Exception.Create(Trim(e.Message));
+      end;
+  end;
+
+  //ex json sCpfCNPJ:= (value.GetValue('cliente') as TJSONObject).GetValue('cpfcnpj').Value;***********************
+
+
+
+  pathConfNFCe:= pathServico + sAux;
+  ForceDirectories(pathConfNFCe);
+  ForceDirectories(pathConfNFCe + 'XMLRETORNO\');
+  ForceDirectories(pathConfNFCe + 'SCHEMAS\');
+  ForceDirectories(pathConfNFCe + 'NFE\');
+  ForceDirectories(pathConfNFCe + 'INUTILIZACAO\');
+  ForceDirectories(pathConfNFCe + 'EVENTO\');
+  with ACBrNFe1.Configuracoes.Arquivos do
+    begin
+      Salvar             := True;
+      SepararPorMes      := False;
+      AdicionarLiteral   := False;
+      EmissaoPathNFe     := False;
+      SalvarEvento       := False;
+      SepararPorCNPJ     := False;
+      SepararPorModelo   := False;
+      PathSalvar         := pathConfNFCe + 'XMLRETORNO\';
+      PathSchemas        := pathConfNFCe + 'SCHEMAS\';
+      PathNFe            := pathConfNFCe + 'NFE\';
+      PathInu            := pathConfNFCe + 'INUTILIZACAO\';
+      PathEvento         := pathConfNFCe + 'EVENTO\';
+      {if (ContaArquivo(PathSchemas,'*.*')<128) then
+        begin
+          I:=FindFirst(schemaOrigem+'*.*', faAnyFile, SR);
+            while i = 0 do
+              begin
+                if (SR.Attr and faDirectory) <> faDirectory then
+                  CopyFile(PChar(schemaOrigem+sr.Name), PChar(PathSchemas + sr.Name), False);
+                i:=FindNext(SR)
+              end;
+
+        end; }
+
+    end;
+
+
+
+  {if tpOnline then
+    ACBrNFe1.Configuracoes.Geral.FormaEmissao := teNormal
+  else
+    ACBrNFe1.Configuracoes.Geral.FormaEmissao := teOffLine; }
+  ACBrNFe1.Configuracoes.Geral.ModeloDF := moNFe;
+  ACBrNFe1.Configuracoes.Geral.VersaoDF := ve400;
+  ACBrNFe1.Configuracoes.Geral.Salvar := True;
+  ACBrNFe1.Configuracoes.Geral.ExibirErroSchema := True;
+  ACBrNFe1.Configuracoes.Geral.FormatoAlerta :='TAG:%TAGNIVEL% ID:%ID%/%TAG%(%DESCRICAO%) - %MSG%.';
+  {
+  ACBrNFe1.Configuracoes.Geral.IdCSC := qryConfNFCe.FieldByName('IDCSC').AsString;
+  ACBrNFe1.Configuracoes.Geral.CSC   := qryConfNFCe.FieldByName('CSC').AsString;
+  if (qryConfNFCe.FieldByName('IDCSC').AsString=EmptyStr) or (qryConfNFCe.FieldByName('CSC').AsString=EmptyStr) then
+    raise Exception.Create('CSC nao configurado');
+  }
+
+  with ACBrNFe1.Configuracoes do
+    begin
+      if (value.GetValue('ide') as TJSONObject).GetValue('tpAmb').Value = '1' then
+        WebServices.Ambiente:= taProducao
+      else
+      WebServices.Ambiente:= taHomologacao;
+      WebServices.UF                       := (value.GetValue('ide') as TJSONObject).GetValue('cUF').Value;
+      WebServices.Visualizar               := False;
+      WebServices.Salvar                   := True;
+      WebServices.AjustaAguardaConsultaRet := True;
+      WebServices.AguardarConsultaRet      := 15000;
+      WebServices.Tentativas               := 3;
+      WebServices.IntervaloTentativas      := 0;
+      WebServices.TimeOut                  := 25000
+    end;
+
+  nrItem        := 0;
+  rSomaPis      := 0;
+  rSomaCofins   := 0;
+  rSomaNF       := 0;
+  rSomaBC       := 0;
+  rSomaICMS     := 0;
+  rSomaDesc     := 0;
+  rSomaProd     := 0;
+  TotalvFCPSTRet:= 0;
+
+
+
+  numNFCe := StrToInt((value.GetValue('ide') as TJSONObject).GetValue('tpNF').Value);
+  iSerie  := StrToInt((value.GetValue('ide') as TJSONObject).GetValue('serie').Value);
+  //sSufuxo :=  FormatCurr('00000000', qryConfNFCe.FieldByName('NUMCCF').AsInteger + 1);
+  dData   := StrToDateTime((value.GetValue('ide') as TJSONObject).GetValue('dhEmi').Value);
+
+   ACBrNFe1.NotasFiscais.Clear;
+   with ACBrNFe1.NotasFiscais.Add.NFe do
+      begin
+         // Ide.cNF       := StrToInt(sSufuxo);
+          Ide.natOp     := 'VENDA';
+          Ide.indPag    := ipVista;
+          Ide.modelo    := 55;
+          Ide.serie     := iSerie;
+          Ide.nNF       := numNFCe;
+          Ide.dEmi      := dData;
+          Ide.dSaiEnt   := dData;
+          Ide.hSaiEnt   := dData;
+          Ide.tpNF      := tnSaida;
+          Ide.tpEmis    := TpcnTipoEmissao(teNormal);
+
+          if StrToInt((value.GetValue('ide') as TJSONObject).GetValue('tpAmb').Value) = 1 then
+            Ide.tpAmb := taProducao
+          else
+            Ide.tpAmb := taHomologacao;
+
+          Ide.cUF                := StrToInt((value.GetValue('ide') as TJSONObject).GetValue('cUF').Value);
+          Ide.cMunFG             := StrToInt((value.GetValue('ide') as TJSONObject).GetValue('cMunFG').Value);
+          Ide.finNFe             := fnNormal;
+          Ide.tpImp              := tiRetrato;
+          Ide.indFinal           := cfConsumidorFinal;
+          Ide.indPres            := pcPresencial;
+          ide.verProc            := 'CloudSRI 1.65.0.1';
+
+      end;
+
+  //final arquivo
+  jsonFree := TJSONObject.Create(nil);
+
+  tagEmitente(value.GetValue('emit') as TJSONObject);
+  tagDestinatario(value.GetValue('dest') as TJSONObject);
+  tagItens(value.GetValue('item') as TJSONArray);
+  tagTotal(value.GetValue('total') as TJSONObject);
+  tagPag(value.GetValue('pag') as TJSONObject);
+  tagRespTec(jsonFree);
+
+  ACBrNFe1.NotasFiscais.GerarNFe;
+  ACBrNFe1.NotasFiscais.Assinar;
+  ACBrNFe1.NotasFiscais.Validar;
+
+  lote := IntToStr(numNFCe) + FormatDateTime('yyyyddmm', now);
+
+  ACBrNFe1.Enviar(strtoint(lote),false);
+end;
+
+function confCONN():TFDConnection;
+var
+  configDB  : Boolean;
+  tentativas: Integer;
+  erro      : string;
+  fbConn   : TFDConnection;
+begin
+  configDB:= True;
+  tentativas:= 0;
+  erro:= EmptyStr;
+  Result:= nil;
+  fbConn:= nil;
+while configDB do
+  begin
+    try
+      fbConn := TFDConnection.Create(nil);
+      //fbConn.DriverName  := 'PG';
+      fbConn.LoginPrompt := False;
+      fbConn.Params.Clear;
+      fbConn.Params.Add('hostname=localhost');
+      //fbConn.Params.Add('drivername=Odbc');
+      fbConn.Params.Add('Database=DBStone');
+      fbConn.Params.Add('User_Name=postgres');
+      fbConn.Params.Add('Password=740516');
+      fbConn.Params.Add('DriverID=PG');
+      fbConn.Params.Add('DataSource=DBStone');
+
+      fbConn.Open();
+      Result:= fbConn;
+      configDB:= False;
+      erro:= EmptyStr;
+    except
+      on e: exception do
+        begin
+          if fbConn <> nil then
+              try FreeAndNil(fbConn) except end;
+          inc(tentativas);
+          if tentativas > 2 then
+            begin
+              configDB:=  False;
+              erro    :=  e.Message;
+              raise Exception.Create(erro);
+            end;
+        end;
+    end;
+  end;
+end;
+
+Function tagEmitente(value : TJSONObject):integer;
+var iTipoCRT : integer;
+    smenssagem : string;
+begin
+
+  with ACBrNFe1.NotasFiscais[0].NFe.Emit do
+     begin
+       CNPJCPF := (value.GetValue('CNPJ').Value);
+       xNome   := (value.GetValue('xNome').Value);
+       xFant   := (value.GetValue('xFant').Value);
+       IE      := (value.GetValue('IE').Value);
+
+       iTipoCRT := strtoint((value.GetValue('CRT').Value));
+       CASE iTipoCRT OF
+         1 : CRT := crtSimplesNacional;
+         2 : CRT := crtSimplesExcessoReceita;
+         3 : CRT := crtRegimeNormal;
+       end;
+
+       EnderEmit.xLgr    := (value.GetValue('xLgr').Value);
+       EnderEmit.nro     := (value.GetValue('nro').Value);
+       EnderEmit.xCpl    := (value.GetValue('xCpl').Value);
+       EnderEmit.xBairro := (value.GetValue('xBairro').Value);
+       EnderEmit.cMun    := strtoint(value.GetValue('cMun').Value);
+       EnderEmit.xMun    := (value.GetValue('xMun').Value);
+       EnderEmit.UF      := (value.GetValue('UF').Value);
+       EnderEmit.CEP     := strtoint(value.GetValue('CEP').Value);
+       EnderEmit.cPais   := strtoint(value.GetValue('cPais').Value);
+       EnderEmit.fone    := (value.GetValue('fone').Value);
+     end;
+
+
+end;
+
+Function tagDestinatario(value : TJSONObject):integer;
+begin
+
+  with ACBrNFe1.NotasFiscais[0].NFe.Dest do
+     begin
+       CNPJCPF := (value.GetValue('CNPJCPF').Value);
+       xNome   := (value.GetValue('xNome').Value);
+       {
+       if (value.GetValue('IE').Value) <> NIL then
+          begin
+            indIEDest := inIsento;
+          end
+       else
+        begin
+          indIEDest := inContribuinte;
+          IE := value.GetValue('IE').Value;
+        end;
+        }
+
+       // ajustat paraa para nota exterior
+       if (value.GetValue('UF').Value) = 'EX' then
+         begin
+           indIEDest := inNaoContribuinte;
+         end;
+
+       EnderDest.xLgr    := (value.GetValue('xLgr').Value);
+       EnderDest.nro     := (value.GetValue('nro').Value);
+
+       if value.Values['xCpl'] <> nil
+          then EnderDest.xCpl    := (value.GetValue('xCpl').Value);
+
+       EnderDest.xBairro := (value.GetValue('xBairro').Value);
+       EnderDest.cMun    := strtoint(value.GetValue('cMun').Value);
+       EnderDest.xMun    := (value.GetValue('xMun').Value);
+       EnderDest.UF      := (value.GetValue('UF').Value);
+       EnderDest.CEP     := strtoint(value.GetValue('CEP').Value);
+       EnderDest.cPais   := strtoint(value.GetValue('cPais').Value);
+       EnderDest.fone    := (value.GetValue('fone').Value);
+
+     end;
+
+end;
+
+Function tagItens(value : TJSONArray):integer;
+var jsonArray : TJSONArray;
+    i : integer;
+    obj, objItem : TJSONObject;
+
+    texto, sSTProd, sOrig :string;
+begin
+
+  for I := 0 to value.Count -1 do
+      begin
+        obj:= (value.Get(i) as TJSONObject);
+
+        objItem := ((obj.GetValue('det') as TJSONObject).GetValue('prod')as TJSONObject);
+
+        //texto := objItem.ToString;
+
+        //detalhe produto
+         with ACBrNFe1.NotasFiscais[0].NFe.Det.Add do
+            begin
+
+              Prod.nItem   := strtoint(objItem.GetValue('nItem').Value);
+              Prod.cProd   := objItem.GetValue('cProd').Value;
+              Prod.cEAN    := objItem.GetValue('cEAN').Value;
+              Prod.cEANTrib:= objItem.GetValue('cEANTrib').Value;
+              Prod.xProd   := objItem.GetValue('xProd').Value;
+              Prod.NCM     := objItem.GetValue('NCM').Value;
+              //Prod.EXTIPI  := objItem.GetValue('ExTIPI').Value;
+              Prod.CFOP    := objItem.GetValue('CFOP').Value;
+              Prod.uCom    := objItem.GetValue('uCom').Value;
+              Prod.qCom    := (objItem.GetValue('qCom').Value).ToDouble;
+              Prod.vUnCom  := (objItem.GetValue('vUnCom').Value).ToDouble;
+              Prod.vProd   := (objItem.GetValue('vProd').Value).ToDouble;
+
+              Prod.uTrib   := (objItem.GetValue('uTrib').Value);
+              Prod.qTrib   := (objItem.GetValue('qTrib').Value).ToDouble;
+              Prod.vUnTrib := (objItem.GetValue('vUnTrib').Value).ToDouble;
+
+              if objItem.Values['vOutro'] <> nil
+                 then Prod.vOutro := (objItem.GetValue('vOutro').Value).ToDouble;
+
+              if objItem.Values['vFrete'] <> nil
+                 then Prod.vFrete := (objItem.GetValue('vFrete').Value).ToDouble;
+
+              if objItem.Values['vSeg'] <> nil
+                 then Prod.vSeg   := (objItem.GetValue('vSeg').Value).ToDouble;
+
+              if objItem.Values['vDesc'] <> nil
+                 then Prod.vDesc  := (objItem.GetValue('vDesc').Value).ToDouble;
+
+
+              if objItem.Values['CEST'] <> nil
+                 then Prod.CEST := (objItem.GetValue('CEST').Value);
+
+              //ICMS
+                 sSTProd := (objItem.GetValue('CST').Value);
+                 sOrig   := (objItem.GetValue('orig').Value);
+
+                 case strtoint(sOrig) of
+                   0 : Imposto.ICMS.orig := oeNacional;
+                   1 : Imposto.ICMS.orig := oeEstrangeiraImportacaoDireta;
+                   2 : Imposto.ICMS.orig := oeEstrangeiraAdquiridaBrasil;
+                   3 : Imposto.ICMS.orig := oeNacionalConteudoImportacaoSuperior40;
+                   4 : Imposto.ICMS.orig := oeNacionalProcessosBasicos;
+                   5 : Imposto.ICMS.orig := oeNacionalConteudoImportacaoInferiorIgual40;
+                   6 : Imposto.ICMS.orig := oeEstrangeiraImportacaoDiretaSemSimilar;
+                   7 : Imposto.ICMS.orig := oeEstrangeiraAdquiridaBrasilSemSimilar;
+                   8 : Imposto.ICMS.orig := oeNacionalConteudoImportacaoSuperior70;
+                 end;
+
+                  if sSTProd = '101'
+                     then Imposto.ICMS.CSOSN := csosn101;
+                  if sSTProd = '102'
+                     then Imposto.ICMS.CSOSN := csosn102;
+                  if sSTProd = '103'
+                     then Imposto.ICMS.CSOSN := csosn103;
+                  if sSTProd = '201'
+                     then Imposto.ICMS.CSOSN := csosn201;
+                  if sSTProd = '202'
+                     then Imposto.ICMS.CSOSN := csosn202;
+                  if sSTProd = '203'
+                     then Imposto.ICMS.CSOSN := csosn203;
+                  if sSTProd = '300'
+                     then Imposto.ICMS.CSOSN := csosn300;
+                  if sSTProd = '400'
+                     then Imposto.ICMS.CSOSN := csosn400;
+                  if sSTProd = '500'
+                     then Imposto.ICMS.CSOSN := csosn500;
+                  if sSTProd = '900'
+                     then Imposto.ICMS.CSOSN := csosn900;
+
+                  if sSTProd = '00'
+                     then Imposto.ICMS.CST := cst00;
+                  if sSTProd = '10'
+                     then Imposto.ICMS.CST := cst10;
+                  if sSTProd = '20'
+                     then Imposto.ICMS.CST := cst20;
+                  if sSTProd = '30'
+                     then Imposto.ICMS.CST := cst30;
+                  if sSTProd = '40'
+                     then Imposto.ICMS.CST := cst40;
+                  if sSTProd = '41'
+                     then Imposto.ICMS.CST := cst41;
+                  if sSTProd = '50'
+                     then Imposto.ICMS.CST := cst50;
+                  if sSTProd = '51'
+                     then Imposto.ICMS.CST := cst51;
+
+                  if objItem.Values['modBC'] <> nil
+                     then Imposto.ICMS.modBC := dbiValorOperacao;
+
+                  if objItem.Values['vBC'] <> nil
+                     then Imposto.ICMS.vBC := StrToCurr(objItem.GetValue('vBC').Value);
+
+                  if objItem.Values['pICMS'] <> nil
+                     then Imposto.ICMS.pICMS := StrToCurr(objItem.GetValue('pICMS').Value);
+
+                  if objItem.Values['vICMS'] <> nil
+                     then Imposto.ICMS.vICMS := StrToCurr(objItem.GetValue('vICMS').Value);
+
+                  if objItem.Values['modBCST'] <> nil
+                     then Imposto.ICMS.modBCST := dbisMargemValorAgregado;
+
+                  if objItem.Values['pMVAST'] <> nil
+                     then Imposto.ICMS.pMVAST := StrToCurr(objItem.GetValue('pMVAST').Value);
+
+                  if objItem.Values['pRedBCST'] <> nil
+                     then Imposto.ICMS.pRedBCST := StrToCurr(objItem.GetValue('pRedBCST').Value);
+
+                  if objItem.Values['pICMSST'] <> nil
+                     then Imposto.ICMS.pICMSST := StrToCurr(objItem.GetValue('pICMSST').Value);
+
+                  if objItem.Values['vBCST'] <> nil
+                     then Imposto.ICMS.vBCST := StrToCurr(objItem.GetValue('vBCST').Value);
+
+                  if objItem.Values['pRedBC'] <> nil
+                     then Imposto.ICMS.pRedBC := StrToCurr(objItem.GetValue('pRedBC').Value);
+
+                  if objItem.Values['vBCSTRet'] <> nil
+                     then Imposto.ICMS.vBCSTRet := StrToCurr(objItem.GetValue('vBCSTRet').Value);
+
+                  if objItem.Values['vICMSSTRet'] <> nil
+                     then Imposto.ICMS.vICMSSTRet := StrToCurr(objItem.GetValue('vICMSSTRet').Value);
+
+                // IPI
+                  sSTProd := (objItem.GetValue('CSTIPI').Value);
+
+                  if sSTProd = '01'
+                     then Imposto.IPI.CST := ipi01;
+                  if sSTProd = '02'
+                     then Imposto.IPI.CST := ipi02;
+                  if sSTProd = '03'
+                     then Imposto.IPI.CST := ipi03;
+                  if sSTProd = '04'
+                     then Imposto.IPI.CST := ipi04;
+
+                  if sSTProd = '05'
+                     then Imposto.IPI.CST := ipi05;
+                  if sSTProd = '49'
+                     then Imposto.IPI.CST := ipi49;
+                  if sSTProd = '50'
+                     then Imposto.IPI.CST := ipi50;
+                  if sSTProd = '51'
+                     then Imposto.IPI.CST := ipi51;
+
+                  if sSTProd = '52'
+                     then Imposto.IPI.CST := ipi52;
+                  if sSTProd = '53'
+                     then Imposto.IPI.CST := ipi53;
+                  if sSTProd = '54'
+                     then Imposto.IPI.CST := ipi54;
+                  if sSTProd = '55'
+                     then Imposto.IPI.CST := ipi55;
+
+                  with Imposto.IPI do
+                    begin
+                      clEnq    := '999';
+                      CNPJProd := '00000000000000';
+                      cSelo    := '0';
+                      qSelo    := 0;
+                      cEnq     := '999';
+
+                      if objItem.Values['IPIVBC'] <> nil
+                         then vBC := StrToCurr(objItem.GetValue('IPIVBC').Value);
+
+                      qUnid  := 0;
+                      vUnid  := 0;
+
+                      if objItem.Values['PIPI'] <> nil
+                         then pIPI := StrToCurr(objItem.GetValue('PIPI').Value);
+
+                      if objItem.Values['vIPI'] <> nil
+                         then vIPI := StrToCurr(objItem.GetValue('vIPI').Value);
+                    end;
+
+                 //PIS
+                 sSTProd := (objItem.GetValue('PISCST').Value);
+                  if sSTProd = '01'
+                     then IMPOSTO.PIS.CST := pis01;
+                  if sSTProd = '02'
+                     then IMPOSTO.PIS.CST := pis02;
+                  if sSTProd = '03'
+                     then IMPOSTO.PIS.CST := pis03;
+                  if sSTProd = '04'
+                     then IMPOSTO.PIS.CST := pis04;
+
+                  if sSTProd = '05'
+                     then IMPOSTO.PIS.CST := pis05;
+                  if sSTProd = '06'
+                     then IMPOSTO.PIS.CST := pis06;
+                  if sSTProd = '07'
+                     then IMPOSTO.PIS.CST := pis07;
+                  if sSTProd = '08'
+                     then IMPOSTO.PIS.CST := pis08;
+
+                  if sSTProd = '09'
+                     then IMPOSTO.PIS.CST := pis09;
+                  if sSTProd = '49'
+                     then IMPOSTO.PIS.CST := pis49;
+                  if sSTProd = '50'
+                     then IMPOSTO.PIS.CST := pis50;
+                  if sSTProd = '51'
+                     then IMPOSTO.PIS.CST := pis51;
+
+                  if sSTProd = '52'
+                     then IMPOSTO.PIS.CST := pis52;
+                  if sSTProd = '53'
+                     then IMPOSTO.PIS.CST := pis53;
+                  if sSTProd = '54'
+                     then IMPOSTO.PIS.CST := pis54;
+                  if sSTProd = '55'
+                     then IMPOSTO.PIS.CST := pis55;
+
+                  if sSTProd = '56'
+                     then IMPOSTO.PIS.CST := pis56;
+                  if sSTProd = '60'
+                     then IMPOSTO.PIS.CST := pis60;
+                  if sSTProd = '61'
+                     then IMPOSTO.PIS.CST := pis61;
+                  if sSTProd = '62'
+                     then IMPOSTO.PIS.CST := pis62;
+
+                  if sSTProd = '63'
+                     then IMPOSTO.PIS.CST := pis63;
+                  if sSTProd = '64'
+                     then IMPOSTO.PIS.CST := pis64;
+                  if sSTProd = '65'
+                     then IMPOSTO.PIS.CST := pis65;
+                  if sSTProd = '66'
+                     then IMPOSTO.PIS.CST := pis66;
+
+                  if sSTProd = '67'
+                     then IMPOSTO.PIS.CST := pis67;
+                  if sSTProd = '70'
+                     then IMPOSTO.PIS.CST := pis70;
+                  if sSTProd = '71'
+                     then IMPOSTO.PIS.CST := pis71;
+                  if sSTProd = '72'
+                     then IMPOSTO.PIS.CST := pis72;
+
+                  if sSTProd = '73'
+                     then IMPOSTO.PIS.CST := pis73;
+                  if sSTProd = '74'
+                     then IMPOSTO.PIS.CST := pis74;
+                  if sSTProd = '75'
+                     then IMPOSTO.PIS.CST := pis75;
+                  if sSTProd = '98'
+                     then IMPOSTO.PIS.CST := pis98;
+                  if sSTProd = '99'
+                     then IMPOSTO.PIS.CST := pis99;
+
+
+                  with Imposto.PIS do
+                    begin
+                      qBCProd   := 0;
+                      vAliqProd := 0;
+                      vPIS      := 0;
+
+                      if objItem.Values['PISBC'] <> nil
+                         then vBC := StrToCurr(objItem.GetValue('PISBC').Value);
+
+                      if objItem.Values['PISP'] <> nil
+                         then pPIS := StrToCurr(objItem.GetValue('PISP').Value);
+
+                      if objItem.Values['PISV'] <> nil
+                         then vPIS := StrToCurr(objItem.GetValue('PISV').Value);
+                    end;
+
+                  with IMPOSTO.PISST do
+                    begin
+                      vBc       := 0;
+                      pPis      := 0;
+                      qBCProd   := 0;
+                      vAliqProd := 0;
+                      vPIS      := 0;
+                    end;
+
+
+                  //COFINS
+                  sSTProd := (objItem.GetValue('COFINSCST').Value);
+                  if sSTProd = '01'
+                     then IMPOSTO.COFINS.CST := cof01;
+                  if sSTProd = '02'
+                     then IMPOSTO.COFINS.CST := cof02;
+                  if sSTProd = '03'
+                     then IMPOSTO.COFINS.CST := cof03;
+                  if sSTProd = '04'
+                     then IMPOSTO.COFINS.CST := cof04;
+
+                  if sSTProd = '05'
+                     then IMPOSTO.COFINS.CST := cof05;
+                  if sSTProd = '06'
+                     then IMPOSTO.COFINS.CST := cof06;
+                  if sSTProd = '07'
+                     then IMPOSTO.COFINS.CST := cof07;
+                  if sSTProd = '08'
+                     then IMPOSTO.COFINS.CST := cof08;
+
+                  if sSTProd = '09'
+                     then IMPOSTO.COFINS.CST := cof09;
+                  if sSTProd = '49'
+                     then IMPOSTO.COFINS.CST := cof49;
+                  if sSTProd = '50'
+                     then IMPOSTO.COFINS.CST := cof50;
+                  if sSTProd = '51'
+                     then IMPOSTO.COFINS.CST := cof51;
+
+                  if sSTProd = '52'
+                     then IMPOSTO.COFINS.CST := cof52;
+                  if sSTProd = '53'
+                     then IMPOSTO.COFINS.CST := cof53;
+                  if sSTProd = '54'
+                     then IMPOSTO.COFINS.CST := cof54;
+                  if sSTProd = '55'
+                     then IMPOSTO.COFINS.CST := cof55;
+
+                  if sSTProd = '56'
+                     then IMPOSTO.COFINS.CST := cof56;
+                  if sSTProd = '60'
+                     then IMPOSTO.COFINS.CST := cof60;
+                  if sSTProd = '61'
+                     then IMPOSTO.COFINS.CST := cof61;
+                  if sSTProd = '62'
+                     then IMPOSTO.COFINS.CST := cof62;
+
+                  if sSTProd = '63'
+                     then IMPOSTO.COFINS.CST := cof63;
+                  if sSTProd = '64'
+                     then IMPOSTO.COFINS.CST := cof64;
+                  if sSTProd = '65'
+                     then IMPOSTO.COFINS.CST := cof65;
+                  if sSTProd = '66'
+                     then IMPOSTO.COFINS.CST := cof66;
+
+                  if sSTProd = '67'
+                     then IMPOSTO.COFINS.CST := cof67;
+                  if sSTProd = '70'
+                     then IMPOSTO.COFINS.CST := cof70;
+                  if sSTProd = '71'
+                     then IMPOSTO.COFINS.CST := cof71;
+                  if sSTProd = '72'
+                     then IMPOSTO.COFINS.CST := cof72;
+
+                  if sSTProd = '73'
+                     then IMPOSTO.COFINS.CST := cof73;
+                  if sSTProd = '74'
+                     then IMPOSTO.COFINS.CST := cof74;
+                  if sSTProd = '75'
+                     then IMPOSTO.COFINS.CST := cof75;
+                  if sSTProd = '98'
+                     then IMPOSTO.COFINS.CST := cof98;
+                  if sSTProd = '99'
+                     then IMPOSTO.COFINS.CST := cof99;
+
+                  with IMPOSTO.COFINS do
+                    begin
+
+                      if objItem.Values['COFINSBC'] <> nil
+                         then vBC := StrToCurr(objItem.GetValue('COFINSBC').Value);
+
+                      if objItem.Values['COFINSP'] <> nil
+                         then pCOFINS := StrToCurr(objItem.GetValue('COFINSP').Value);
+
+                      if objItem.Values['COFINSV'] <> nil
+                         then vCOFINS := StrToCurr(objItem.GetValue('COFINSV').Value);
+
+                      qBCProd   := 0;
+                      vAliqProd := 0;
+                    end;
+
+                  with IMPOSTO.COFINSST do
+                    begin
+                      vBC       := 0;
+                      pCOFINS   := 0;
+                      qBCProd   := 0;
+                      vAliqProd := 0;
+                      vCOFINS   := 0;
+                    end;
+
+            end;
+      end;
+
+
+end;
+
+Function tagTotal(value : TJSONObject):integer;
+begin
+
+  with ACBrNFe1.NotasFiscais[0].NFe.Total do
+    begin
+      ICMSTot.vBC    := StrToCurr(value.GetValue('vBC').Value);
+      ICMSTot.vICMS  := StrToCurr(value.GetValue('vICMS').Value);
+      ICMSTot.vBCST  := StrToCurr(value.GetValue('vBCST').Value);
+      ICMSTot.vST    := StrToCurr(value.GetValue('vST').Value);
+      ICMSTot.vProd  := StrToCurr(value.GetValue('vProd').Value);
+      ICMSTot.vFrete := StrToCurr(value.GetValue('vFrete').Value);
+      ICMSTot.vSeg   := StrToCurr(value.GetValue('vSeg').Value);
+      ICMSTot.vDesc  := StrToCurr(value.GetValue('vDesc').Value);
+      ICMSTot.vII    := StrToCurr(value.GetValue('vII').Value);
+      ICMSTot.vIPI   := StrToCurr(value.GetValue('vIPI').Value);
+      ICMSTot.vPIS   := StrToCurr(value.GetValue('vPIS').Value);
+      ICMSTot.vCOFINS := StrToCurr(value.GetValue('vCOFINS').Value);
+      ICMSTot.vOutro  := StrToCurr(value.GetValue('vOutro').Value);
+      ICMSTot.vNF     := StrToCurr(value.GetValue('vNF').Value);
+      ICMSTot.vICMSDeson := StrToCurr(value.GetValue('vICMSDeson').Value);
+      ICMSTot.vFCP       := StrToCurr(value.GetValue('vFCP').Value);
+    end;
+
+end;
+
+Function tagPag(value : TJSONObject):integer;
+var iPag, iTipoPag : integer;
+begin
+
+  value := (value.GetValue('detPag') as TJSONObject);
+
+   with ACBrNFe1.NotasFiscais[0].NFe.pag.Add do
+      begin
+        iPag  := strtoint(value.GetValue('indPag').Value);
+
+        case iPag of
+          0 : indPag := ipVista;
+          1 : indPag := ipPrazo;
+          2 : indPag := ipOutras;
+          3 : indPag := ipNenhum;
+        end;
+
+        iTipoPag  := strtoint(value.GetValue('tPag').Value);
+        case iTipoPag of
+           1 : tPag := fpDinheiro;
+           2 : tPag := fpCheque;
+           3 : tPag := fpCartaoCredito;
+           4 : tPag := fpCartaoDebito;
+           5 : tPag := fpCreditoLoja;
+           6 : tPag := fpValeAlimentacao;
+           7 : tPag := fpValeRefeicao;
+           8 : tPag := fpValePresente;
+           9 : tPag := fpValeCombustivel;
+          10 : tPag := fpDuplicataMercantil;
+          12 : tPag := fpBoletoBancario;
+          13 : tPag := fpSemPagamento;
+          14 : tPag := fpOutro;
+        end;
+
+        if value.Values['vPag'] <> nil
+          then vPag := StrToCurr(value.GetValue('vPag').Value);
+      end;
+
+end;
+
+Function tagRespTec(value : TJSONObject):integer;
+begin
+
+  with ACBrNFe1.NotasFiscais[0].NFe.infRespTec do
+    begin
+      CNPJ := '26191804000109';
+      xContato := 'Mario Correia de Queiroz';
+      email    := 'mario@sriautomacao.com.br';
+      fone     := '81992327051';
+    end;
+end;
+
+end.

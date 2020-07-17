@@ -1,0 +1,48 @@
+﻿<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+    <PropertyGroup>
+        <ProjectGuid>{52969AD8-2A35-41ED-A0D0-0BB715EA87BD}</ProjectGuid>
+    </PropertyGroup>
+    <ItemGroup>
+        <Projects Include="ServeNFe.dproj">
+            <Dependencies/>
+        </Projects>
+        <Projects Include="teste.dproj">
+            <Dependencies/>
+        </Projects>
+    </ItemGroup>
+    <ProjectExtensions>
+        <Borland.Personality>Default.Personality.12</Borland.Personality>
+        <Borland.ProjectType/>
+        <BorlandProject>
+            <Default.Personality/>
+        </BorlandProject>
+    </ProjectExtensions>
+    <Target Name="ServeNFe">
+        <MSBuild Projects="ServeNFe.dproj"/>
+    </Target>
+    <Target Name="ServeNFe:Clean">
+        <MSBuild Projects="ServeNFe.dproj" Targets="Clean"/>
+    </Target>
+    <Target Name="ServeNFe:Make">
+        <MSBuild Projects="ServeNFe.dproj" Targets="Make"/>
+    </Target>
+    <Target Name="teste">
+        <MSBuild Projects="teste.dproj"/>
+    </Target>
+    <Target Name="teste:Clean">
+        <MSBuild Projects="teste.dproj" Targets="Clean"/>
+    </Target>
+    <Target Name="teste:Make">
+        <MSBuild Projects="teste.dproj" Targets="Make"/>
+    </Target>
+    <Target Name="Build">
+        <CallTarget Targets="ServeNFe;teste"/>
+    </Target>
+    <Target Name="Clean">
+        <CallTarget Targets="ServeNFe:Clean;teste:Clean"/>
+    </Target>
+    <Target Name="Make">
+        <CallTarget Targets="ServeNFe:Make;teste:Make"/>
+    </Target>
+    <Import Project="$(BDS)\Bin\CodeGear.Group.Targets" Condition="Exists('$(BDS)\Bin\CodeGear.Group.Targets')"/>
+</Project>

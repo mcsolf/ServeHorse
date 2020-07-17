@@ -1,0 +1,7 @@
+object Service2: TService2
+  OldCreateOrder = False
+  DisplayName = 'Service2'
+  OnExecute = ServiceExecute
+  Height = 362
+  Width = 438
+end

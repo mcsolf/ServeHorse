@@ -1,0 +1,19 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<BorlandProject>
+	<Transactions>
+    <Transaction>2020/05/20 13:59:14.000.110,=C:\Users\mcsol\Documents\Embarcadero\Studio\Projects\Unit2.pas</Transaction>
+    <Transaction>2020/06/02 23:24:42.000.409,=C:\Users\mcsol\Documents\Embarcadero\Studio\Projects\Unit2.pas</Transaction>
+    <Transaction>2020/06/15 14:40:49.000.013,=C:\Users\mcsol\Documents\Embarcadero\Studio\Projects\Unit2.pas</Transaction>
+    <Transaction>2020/06/15 14:50:14.000.339,=C:\Users\mcsol\Documents\Embarcadero\Studio\Projects\Unit2.pas</Transaction>
+    <Transaction>2020/06/15 15:34:23.000.810,=C:\Users\mcsol\Documents\Embarcadero\Studio\Projects\Unit2.pas</Transaction>
+    <Transaction>2020/06/16 02:46:46.000.400,=C:\Users\mcsol\Documents\Embarcadero\Studio\Projects\Unit2.pas</Transaction>
+    <Transaction>2020/07/08 17:27:05.000.385,=C:\Users\mcsol\Documents\Embarcadero\Studio\Projects\Unit2.pas</Transaction>
+    <Transaction>2020/07/08 17:27:37.000.019,D:\Producao\ServeHorse\uServeNFe.dfm=C:\Users\mcsol\Documents\Embarcadero\Studio\Projects\Unit2.dfm</Transaction>
+    <Transaction>2020/07/08 17:27:37.000.019,D:\Producao\ServeHorse\uServeNFe.pas=C:\Users\mcsol\Documents\Embarcadero\Studio\Projects\Unit2.pas</Transaction>
+    <Transaction>2020/07/08 17:27:50.000.328,D:\Producao\ServeHorse\ServeNFe.dproj=C:\Users\mcsol\Documents\Embarcadero\Studio\Projects\Project2.dproj</Transaction>
+    <Transaction>2020/07/08 17:30:31.000.942,=D:\Producao\ServeHorse\uNFe.pas</Transaction>
+  </Transactions>
+	<ActiveMobileDevice>
+		<NoProfile iOSSimulator="iPhone5"/>
+	</ActiveMobileDevice>
+</BorlandProject>

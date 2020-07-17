@@ -1,0 +1,51 @@
+unit uServeNFe;
+
+interface
+
+uses
+  Winapi.Windows, Winapi.Messages, System.SysUtils, System.Classes, Vcl.Graphics, Vcl.Controls, Vcl.SvcMgr,
+   Vcl.Dialogs, Horse, Horse.Jhonson;
+
+type
+  TService2 = class(TService)
+    procedure ServiceExecute(Sender: TService);
+  private
+    { Private declarations }
+  public
+    function GetServiceController: TServiceController; override;
+    { Public declarations }
+  end;
+
+var
+  Service2: TService2;
+
+  var
+  App: THorse;
+
+implementation
+
+{$R *.dfm}
+
+procedure ServiceController(CtrlCode: DWord); stdcall;
+begin
+  Service2.Controller(CtrlCode);
+end;
+
+function TService2.GetServiceController: TServiceController;
+begin
+  Result := ServiceController;
+end;
+
+procedure TService2.ServiceExecute(Sender: TService);
+begin
+  App := THorse.Create(9000);
+  App.Use(Jhonson);
+
+  uNFe.Registry(App);
+
+
+  App.Start;
+
+end;
+
+end.
